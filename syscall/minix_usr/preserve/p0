@@ -1,0 +1,43 @@
+# include <stdio.h>
+# include <lib.h> 		/* provides _syscall and message */
+# include <stdlib.h> 	/* provides atoi */
+
+# define PROC_N 10		/* number of proccesses to test */ 
+
+/* Program testing GETPROCNR (system call)
+ *
+ */
+
+int main(int argc, char **argv){
+
+	/* check for arguments provides */
+	if (argc < 2){
+		prif("Argument not provided. Exiting...\n");
+        exit(1);
+	}
+
+	/* read argument (pid) as int */    
+    int pid = atoi(argv[1]);
+	  
+	printf("Testing system call  GETPROCNR \n");
+
+	for(int i=pid-PROC_N; i<=pid; i++){
+		/* call getprocnr function */
+		int procnr = getprocnr(i);
+		
+		printf("PID = %d\t PROCNR = %d,\n", i, procnr);  
+	}
+
+	return 0;
+}
+
+/* function calling system call with given parameter (int) */
+int getprocnr(int pid) {
+	
+	message m;	/* Minix message to pass param to a system call */
+    
+    m.m1_i1 = val;  /* set first integer of message to pid */
+    
+    /* invoke GETPROCNR syscall on MM server passing message m */
+	return _syscall(MM, GETPROCNR, &m);
+}

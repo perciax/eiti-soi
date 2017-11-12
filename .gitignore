@@ -1,0 +1,8 @@
+# ignore peku33 toolkit
+minix-toolkit-master/
+
+# ignore all system images
+*.img.*
+
+# ignore all archives
+*.zip
