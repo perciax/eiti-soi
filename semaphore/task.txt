@@ -1,0 +1,11 @@
+przesyłam Pana treść do zadania z semaforów i monitorów. W przypadku semaforów należy skorzystać z procesów i pamięci współdzielonej, dla monitorów rozwiązanie jest na wątkach.
+
+Uwagi:
+- należy korzystać tylko z semaforów POSIX, System V jest niedozwolone;
+- wystąpienie zakleszczenia lub aktywnego oczekiwania daje 0 pkt za rozwiązanie;
+- dostęp jest tylko do pierwszego elementu w buforze;
+- jeżeli w treści zadania jest napisane, że coś ma się wydarzyć jednocześnie, to znaczy, że proces nie może wykonać swojej czynności jeżeli nie zostały spełnione warunki dla całego zdarzenia.
+
+Treść zadania:
+
+Bufor n-elementowy FIFO (n > 3). Jest jeden producent i trzech konsumentów (A, B, C). Producent produkuje jeden element, jeżeli jest miejsce w buforze. Element jest usuwany z bufora, jeżeli zostanie przeczytany przez albo obu konsumentów A i B, albo przez obu konsumentów B i C. Konsument A nie może przeczytać elementu, jeżeli został on już przez niego wcześniej przeczytany, albo został przeczytany przez konsumenta C i na odwrót. Konsument B również nie może wielokrotnie czytać tego samego elementu. Ponadto, liczba elementów w buforze po usunięciu elementu przez dowolnego konsumenta nie może spaść poniżej 3.
