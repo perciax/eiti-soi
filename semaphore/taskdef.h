@@ -9,7 +9,7 @@
 #include  <sys/shm.h>
 
 #define BUFFER_SIZE 3
-#define KEY 101010
+#define KEY 101011
 
 /* If expr is false, print error message and exit. */
 #define CHECK(expr, msg)                        \
@@ -26,6 +26,7 @@ typedef struct
 {    
 	int buff[BUFFER_SIZE];
 	sem_t mutex, empty, full;
+    sem_t read_by_A, read_by_B, read_by_C;
     int a, b, c;
 } MEM;
 
@@ -47,7 +48,6 @@ void init()
     int n;
     MEM *M = memory();
 
-
     /* Initialize structure pointer with shared memory */
 
 	/* Initialize semaphores */
@@ -56,6 +56,12 @@ void init()
     CHECK(sem_init(&M->empty,1,BUFFER_SIZE)==0, "sem_init (empty)");
 
     CHECK(sem_init(&M->full,1,0)==0, "sem_init (full)");
+
+    CHECK(sem_init(&M->read_by_A,1,0)==0, "sem_init (read_by_A)");
+
+    CHECK(sem_init(&M->read_by_B,1,0)==0, "sem_init (read_by_B)");
+
+    CHECK(sem_init(&M->read_by_C,1,0)==0, "sem_init (read_by_C)");
 
     M->a=0;
     M->b=0;
@@ -68,6 +74,7 @@ int get_elem(int *elem)
     int n;
     MEM *M = memory();
     sem_getvalue(&M->full,&n);
+    printf("get_elem: sem full val: %d\n\n", n);
     if(n>0){
         *elem=(M->buff)[n+1];    
         return 0;
