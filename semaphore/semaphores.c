@@ -2,12 +2,13 @@
 #include <signal.h>
 #include <time.h>
 
-#include "taskdef.h" /* consts definitions, buffer structure and shared memory allocation method ---------*/
+#include "semaphores.h" /* consts definitions, buffer structure and shared memory allocation method ---------*/
 
 
 void producer(int n_to_produce, int seconds);
-void consumer_A(int seconds);
-void consumer_B(int seconds);
+int consumer_A(int seconds);
+int consumer_B(int seconds);
+int consumer_C(int seconds);
 
 /*--------------------------------------------- MAIN -----------------------------------------------------*/
 
@@ -21,7 +22,7 @@ int main (int argc, char *argv[]) {
 	/* PRODUCER */
     pid = fork();
 	if (pid == 0){ 
-        producer(15, 1);
+        producer(10, 1);
         return 0;
     }
 	
@@ -40,8 +41,14 @@ int main (int argc, char *argv[]) {
         return 0;
 
     }
-    
 
+    /* CONSUMER C*/
+    pid=fork();
+    if(pid==0){
+        //consumer_C(2);
+        return 0;
+
+    }
 
 	return 0;
 }
@@ -58,111 +65,143 @@ void producer(int n_to_produce, int seconds){
 	printf("[PRODUCER] Start, PID = %d \n", getpid());
 
     srand(getpid());
-	time = rand() % 500000 + 50000;
-	
-       
-//    sem_getvalue(&S->full,&n);
-//    printf("sem full val = %d\n", n);
-
-//    sem_getvalue(&S->empty,&n);
-//    printf("sem empty val = %d\n", n);
-
-//    sem_getvalue(&S->mutex,&n);
-//    printf("sem mutex val = %d\n", n);
+	time = rand() % 500000 + 50000;	
 	    
 	for(int j=0; j<n_to_produce; j++){
-	    elem++;
-        usleep(time);
+	    
+        usleep(time);        
+        elem++;
 
 	    CHECK(sem_wait(&S->empty)==0, "sem_wait (empty)"); // Semaphore down operation
 	    CHECK(sem_wait(&S->mutex)==0, "sem_wait (mutex)");
-	    sem_getvalue(&S->full,&n);
-	    (S->buff)[n] = elem; // Place value to BUFFER
-	    printf("[PRODUCER]\t Placed element [%d]\t %d elements in buffer\n", elem, n+1);
+        (S->n)++;
+ 
+	    (S->buff)[(S->tail)] = elem; // Place value to BUFFER        
+
+	    printf("[PRODUCER]\t Placed element [%d]\t %d elements in buffer\n", (S->buff)[(S->tail)], (S->n));
+
+        (S->tail)++;
+        if((S->tail)>=BUFFER_SIZE) (S->tail)=0;
+
+        //printf("[FIFO] n = %d, head = %d, tail = %d\n", (S->n), (S->head), (S->tail));         
+        
 	    sem_post(&S->mutex);
-	    sem_post(&S->full); // Semaphore up operation
+	    
+        sem_post(&S->full); // Semaphore up operation
+        
     }
    
 	printf("[PRODUCER] End, PID = %d\n", getpid());
+    exit(0);
     
 }
 
 /*--------------------------------------------- CONSUMER A -----------------------------------------------------*/
 
-void consumer_A(int seconds){
-        int n, elem, removed, time;
-	    MEM *S = memory();
+int consumer_A(int seconds){
+        int pid, n, elem, time, read;
+        MEM *S = memory();
 
         srand(getpid());
     	time = rand() % 500000 + 50000;
 
     	while(1){
             usleep(time);
-
-		    sem_wait(&S->full); // Semaphore down operation
-		    sem_wait(&S->mutex); // Semaphore for mutual exclusion
             
-            //S->a = 1;
+            sem_wait(&S->full);   
+            sem_wait(&S->not_read_by_AC);
 
-            //printf("[CONSUMER A]\t a = %d, b = %d, c = %d\n", S->a, S->b, S->c);
-            //if (S->b == 1){
-                
-		   //     if(get_elem(&elem)==0){
-             //       printf("[CONSUMER A]\t Removed element [%d]\t %d elements in buffer\n", elem, n);
-               //     removed = 1;
-      
-                //}else printf("[CONSUMER A]\t ERROR Accessing empty buffer!\n");
-             
-            sem_getvalue(&S->full,&n);	        
-            printf("[CONSUMER A]\t Removed element [%d]\t %d elements in buffer\n", (S->buff)[n], n);   		        
+            read_elem(&elem, &n, 'a');
+            printf("[CONSUMER A]\t Read element [%d]\t %d elements in buffer\n", elem, n);
+            sem_post(&S->read_by_AC);
+            
+            sem_wait(&S->read_by_B);
 
-
-            //}else printf("[CONSUMER A]\t Element not read by Consumer B\n");
-
-		    sem_post(&S->mutex); // Mutex up operation
-            sem_post(&S->empty); // Semaphore up operation
-            //else sem_post(&S->full);
-		    
-	    }    
+            if(!remove_elem(&elem, &n)){
+                printf("[CONSUMER A]\t Removed element [%d]\t %d elements in buffer\n", elem, n);
+                sem_post(&S->empty);
+            }else{
+                printf("[CONSUMER A]\t Element not deleted, not read two times\n");
+                sem_post(&S->full);
+            }
+            
+            sem_post(&S->not_read_by_B);
+            sem_post(&S->not_read_by_AC);
+      }    
 }
 
+/*--------------------------------------------- CONSUMER C -----------------------------------------------------*/
 
-void consumer_B(int seconds){
-        int n, elem, removed, time;
-	    MEM *S = memory();
+int consumer_C(int seconds){
+        int pid, n, elem, time, read;
+        MEM *S = memory();
 
+        srand(getpid());
+    	time = rand() % 500000 + 50000;
+
+    	while(1){
+            usleep(time);
+            
+            sem_wait(&S->full);   
+            sem_wait(&S->not_read_by_AC);
+
+            read_elem(&elem, &n, 'c');
+            printf("[CONSUMER C]\t Read element [%d]\t %d elements in buffer\n", elem, n);
+            sem_post(&S->read_by_AC);
+            
+            sem_wait(&S->read_by_B);
+
+            if(!remove_elem(&elem, &n)){
+                printf("[CONSUMER C]\t Removed element [%d]\t %d elements in buffer\n", elem, n);
+                sem_post(&S->empty);
+            }else{
+                printf("[CONSUMER C]\t Element not deleted, not read two times\n");
+                sem_post(&S->full);
+            }
+            
+            sem_post(&S->not_read_by_B);
+            sem_post(&S->not_read_by_AC);
+      }    
+}
+
+/*--------------------------------------------- CONSUMER B -----------------------------------------------------*/
+int consumer_B(int seconds){
+        int pid, n, elem, time, read;
+        MEM *S = memory();
+        
         srand(getpid());
 	    time = rand() % 500000 + 50000;
 
     	while(1){
             usleep(time);
-
-		    sem_wait(&S->full); // Semaphore down operation
-		    sem_wait(&S->mutex); // Semaphore for mutual exclusion
             
-            //S->a = 1;
+            sem_wait(&S->full);   
+            sem_wait(&S->not_read_by_B);
 
-            //printf("[CONSUMER A]\t a = %d, b = %d, c = %d\n", S->a, S->b, S->c);
-            //if (S->b == 1){
-                
-		   //     if(get_elem(&elem)==0){
-             //       printf("[CONSUMER A]\t Removed element [%d]\t %d elements in buffer\n", elem, n);
-               //     removed = 1;
-      
-                //}else printf("[CONSUMER A]\t ERROR Accessing empty buffer!\n");
-             
-            sem_getvalue(&S->full,&n);	        
-            printf("[CONSUMER B]\t Removed element [%d]\t %d elements in buffer\n", (S->buff)[n], n);   		        
+            read_elem(&elem, &n, 'b');
+            printf("[CONSUMER B]\t Read element [%d]\t %d elements in buffer\n", elem, n);
+            sem_post(&S->read_by_B);
+            
+            sem_wait(&S->read_by_AC);
 
+            
 
-            //}else printf("[CONSUMER A]\t Element not read by Consumer B\n");
+            if(!remove_elem(&elem, &n)){
+                printf("[CONSUMER B]\t Removed element [%d]\t %d elements in buffer\n", elem, n);
+                sem_post(&S->empty);
+            }else{
+                printf("[CONSUMER B]\t Element not deleted, not read two times\n");
+                sem_post(&S->full);
+            }
+            
 
-		    sem_post(&S->mutex); // Mutex up operation
-            sem_post(&S->empty); // Semaphore up operation
-            //else sem_post(&S->full);
-		    
-	    }    
+            sem_post(&S->not_read_by_AC);
+            sem_post(&S->not_read_by_B);
+                 
+	    }       
 }
+
+
 
 
 

@@ -9,7 +9,7 @@
 #include  <sys/shm.h>
 
 #define BUFFER_SIZE 3
-#define KEY 101011
+#define KEY 111110
 
 /* If expr is false, print error message and exit. */
 #define CHECK(expr, msg)                        \
@@ -25,9 +25,10 @@
 typedef struct
 {    
 	int buff[BUFFER_SIZE];
+    int head, tail, n;
 	sem_t mutex, empty, full;
-    sem_t read_by_A, read_by_B, read_by_C;
-    int a, b, c;
+    sem_t read_by_AC, read_by_B, not_read_by_AC, not_read_by_B;
+    int b, ac;
 } MEM;
 
 /* Shared memory allocation */
@@ -57,26 +58,60 @@ void init()
 
     CHECK(sem_init(&M->full,1,0)==0, "sem_init (full)");
 
-    CHECK(sem_init(&M->read_by_A,1,0)==0, "sem_init (read_by_A)");
+    CHECK(sem_init(&M->read_by_AC,1,0)==0, "sem_init (read_by_A)");
 
     CHECK(sem_init(&M->read_by_B,1,0)==0, "sem_init (read_by_B)");
 
-    CHECK(sem_init(&M->read_by_C,1,0)==0, "sem_init (read_by_C)");
+    CHECK(sem_init(&M->not_read_by_B,1,1)==0, "sem_init (not_read_by_B)");
 
-    M->a=0;
+    CHECK(sem_init(&M->not_read_by_AC,1,1)==0, "sem_init (not_read_by_AC)");
+
+    M->head=0;
+    M->tail=0;
+    M->n=0;    
+
     M->b=0;
-    M->c=0;
-
+    M->ac=0;
 }
 
-int get_elem(int *elem)
-{   
-    int n;
-    MEM *M = memory();
-    sem_getvalue(&M->full,&n);
-    printf("get_elem: sem full val: %d\n\n", n);
-    if(n>0){
-        *elem=(M->buff)[n+1];    
-        return 0;
-    }else return -1;
+void read_elem(int *elem, int *n, char consumer)
+{
+        MEM *S = memory();
+            
+	    sem_wait(&S->mutex); // Semaphore for mutual exclusion
+        
+        *n = S->n;
+        *elem = (S->buff)[S->head];
+
+        if (consumer == 'a' || consumer == 'c') S->ac=1;
+        if (consumer == 'b') S->b=1;           
+
+        //printf("[FIFO] n = %d, head = %d, tail = %d\n", (S->n), (S->head), (S->tail));         
+
+        sem_post(&S->mutex); // Mutex up operation
+}
+
+int remove_elem(int *elem, int *n)
+{
+        MEM *S = memory();
+            
+	    sem_wait(&S->mutex); // Semaphore for mutual exclusion
+        
+        if( (S->ac) && (S->b) ){  
+            
+            (S->n)--;        
+            *n = S->n;
+            *elem = (S->buff)[S->head];
+            (S->head)++;
+            if((S->head)>=BUFFER_SIZE) (S->head)=0;
+
+            S->ac=0; S->b=0;
+            sem_post(&S->mutex); // Mutex up operation
+            return 0;
+        
+        }else{
+            sem_post(&S->mutex);
+            return -1;          
+        }
+        
 }
