@@ -18,7 +18,6 @@ void *consumer_A(void *);
 void *consumer_B(void *);
 void *consumer_C(void *);
 
-
 BufferMonitor buffMonitor;
 
 int main(int argc, char *argv[]) {
@@ -58,7 +57,7 @@ void *producer(void *to_produce) {
 	for(int i=0; i< n; i++){
 
 		/* wait random number of microseconds (100ms - 1s) */
-		usleep(rand() % 1000000 + 100000);
+		usleep(rand() % 10000000 + 1000000);
 
 		buffMonitor.push(i); // push element to Buffer
 	}
@@ -101,7 +100,7 @@ void *consumer_B(void *) {
 
 	while(1){
 		/* wait random number of microseconds (300ms - 3s) */
-		usleep(rand() % 3000000 + 300000);
+		usleep(rand() % 1000000 + 300000);
 
 		buffMonitor.consumer(consumer); // enter monitor as a consumer
 
