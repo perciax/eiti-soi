@@ -23,6 +23,7 @@ private:
 	void clear_read_by();						// clear all read by flags
 
 public:
+	void consumer(char consumer);					// enter Buffer Monitor as a consumer
 	void push(int elem);						// push elem to Buffer
 	int read(char consumer);					// read first elem from Buffer by consumer
 	void pop(char consumer);					// delete first elem from Buffer
@@ -47,44 +48,68 @@ void BufferMonitor::push(int elem){
 	cout << "[PRODUCER]\t Pushed elem [" << elem << "]\t"<< buff.size() <<" elements in buffer" << endl;
 
 	if(!buff.empty()) signal(empty); 		// send info that buffer is not empty
+
+	if(buff.size() == 1){ signal(read_A); signal(read_B); signal(read_C); }
+
 	if(buff.size() == 4) signal(enough); 	// send info that element can be popped
 	leave(); 								// leave monitor
 }
 
-int BufferMonitor::read(char consumer){
-	int elem = -1;			// temporary elem to save elem from buffer;
+void BufferMonitor::consumer(char consumer){
+	int elem = -1;			// temporary elem to save elem from buffer
 
-	//cout << "[CONSUMER " << consumer <<"]\t before enter" <<endl;
 	enter(); 								// enter monitor
 
-	if(buff.empty()) wait(empty); 			// wait on conditional var till buffer will be not empty
+	cout<< "[CONSUMER " << consumer <<"]\t Trying to read" << endl;
 
-	//cout<< "[CONSUMER " << consumer << "]\t Trying to read" << endl;
+	if (consumer == 'A' && (read_by_A || read_by_C)) wait(read_A);
+	if (consumer == 'B' && read_by_B) wait(read_B);
+	if (consumer == 'C' && (read_by_A || read_by_C)) wait(read_C);
 
-	if( (consumer == 'A' && !read_by_A && !read_by_C)
-			|| (consumer == 'B' && !read_by_B)
-			|| (consumer == 'C' && !read_by_A && !read_by_C) ){
 
-		//cout<< "[CONSUMER " << consumer <<"]\t not empty" << endl;
-		set_read_by(consumer, 1);
-		//cout<< "[CONSUMER " << consumer <<"]\t read by: " << get_read_by(consumer) <<endl;
+	elem = buff.front();
+	cout << "[CONSUMER " << consumer << "]\t Read elem [" << elem << "]\t\t" << buff.size()<<" elements in buffer"<<endl;
 
-		elem = buff.front();
-		cout << "[CONSUMER " << consumer << "]\t Read elem [" << elem << "]\t\t" << buff.size()<<" elements in buffer"<<endl;
-	}else cout<< "[CONSUMER " << consumer << "]\t Cannot read" << endl;
+	set_read_by(consumer, 1);
+	cout<< "read_A: " << read_by_A << " read_B: " << read_by_B << " read_C: " << read_by_C <<endl;
 
+
+
+	// Removing
+	if( ( consumer == 'B' && ( get_read_by('A') || get_read_by('C') ) )
+		|| ( (consumer == 'A' || consumer == 'C') && get_read_by('B') )	){
+
+		if(buff.size()<=3) wait(enough);
+			elem = buff.front();					// elem to be removed
+			buff.pop();
+			cout << "[CONSUMER " << consumer << "]\t Removed elem [" << elem << "]\t"
+					<< buff.size()<<" elements in buffer"<<endl;
+
+		if (read_by_A) {clear_read_by(); signal(read_A);}
+		if (read_by_B) { clear_read_by(); signal(read_B);}
+		if (read_by_C) {clear_read_by(); signal(read_B);}
+
+		//clear_read_by();
+
+
+		if(buff.size()<buff_size) signal(full);	// send info that buffer is not full
+	}
+
+	leave();								// leave monitor
+}
+
+int BufferMonitor::read(char consumer){
+	int elem = -1;
 
 
 	if(!buff.empty()) signal(empty);
-	leave();								// leave monitor
+
 
 	return elem;
 }
 
 void BufferMonitor::pop(char consumer){
 	int elem;
-
-	enter(); 								// enter monitor
 
 	//cout << "[CONSUMER " << consumer << "]\t" <<endl;
 
@@ -102,7 +127,6 @@ void BufferMonitor::pop(char consumer){
 
 	if(buff.size()<buff_size) signal(full);	// send info that buffer is not full
 
-	leave();								// leave monitor
 }
 
 void BufferMonitor::init_empty(int n){

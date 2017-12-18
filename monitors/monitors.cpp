@@ -81,9 +81,7 @@ void *consumer_A(void *) {
 		/* wait random number of microseconds (300ms - 3s) */
 		usleep(rand() % 3000000 + 300000);
 
-		elem = buffMonitor.read(consumer); // push element to Buffer
-
-		buffMonitor.pop(consumer); // push element to Buffer
+		buffMonitor.consumer(consumer); // enter monitor as a consumer
 
 	}
 
@@ -105,9 +103,7 @@ void *consumer_B(void *) {
 		/* wait random number of microseconds (300ms - 3s) */
 		usleep(rand() % 3000000 + 300000);
 
-		elem = buffMonitor.read(consumer); // push element to Buffer
-
-		buffMonitor.pop(consumer); // push element to Buffer
+		buffMonitor.consumer(consumer); // enter monitor as a consumer
 
 	}
 
@@ -129,9 +125,7 @@ void *consumer_C(void *) {
 		/* wait random number of microseconds (300ms - 3s) */
 		usleep(rand() % 3000000 + 300000);
 
-		elem = buffMonitor.read(consumer); // push element to Buffer
-
-		buffMonitor.pop(consumer); // push element to Buffer
+		buffMonitor.consumer(consumer); // enter monitor as a consumer
 
 	}
 
