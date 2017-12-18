@@ -22,15 +22,22 @@ BufferMonitor buffMonitor;
 
 int main(int argc, char *argv[]) {
 
-	cout << "**************** Producer - Consumer    with Monitors ***************" << endl; // prints !!!Hello World!!!
-
-	pthread_t threads[4]; // thread declaration: producer and 3 consumers
-
-	buffMonitor.init_empty(5);
+	int buffer_size;
+	if (argc>1) buffer_size = atoi(argv[1]);
+		else buffer_size = 5;
 
 	int *to_produce = (int *) malloc(sizeof(int));
 
-	*to_produce= 10;
+	if (argc>2) *to_produce = atoi(argv[2]);
+		else *to_produce = 10;
+
+	cout << "**************** Producer - Consumer    with Monitors ***************" << endl;
+
+	// thread declaration: producer and 3 consumers
+	pthread_t threads[4];
+
+	// init empty buffer
+	buffMonitor.init_empty(buffer_size);
 
 	pthread_create(&threads[1], NULL, producer, to_produce );
 	pthread_create(&threads[2], NULL, consumer_A, NULL);
@@ -57,7 +64,7 @@ void *producer(void *to_produce) {
 	for(int i=0; i< n; i++){
 
 		/* wait random number of microseconds (100ms - 1s) */
-		usleep(rand() % 10000000 + 1000000);
+		usleep(rand() % 1000000 + 100000);
 
 		buffMonitor.push(i); // push element to Buffer
 	}
@@ -100,7 +107,7 @@ void *consumer_B(void *) {
 
 	while(1){
 		/* wait random number of microseconds (300ms - 3s) */
-		usleep(rand() % 1000000 + 300000);
+		usleep(rand() % 3000000 + 300000);
 
 		buffMonitor.consumer(consumer); // enter monitor as a consumer
 
