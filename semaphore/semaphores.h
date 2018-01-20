@@ -8,17 +8,9 @@
 #include <unistd.h>
 #include  <sys/shm.h>
 
-#define BUFFER_SIZE 3
-#define KEY 111110
-
-/* If expr is false, print error message and exit. */
-#define CHECK(expr, msg)                        \
-    do {                                        \
-        if (!(expr)) {                          \
-            perror(msg);                        \
-            exit(EXIT_FAILURE);                 \
-        }                                       \
-    } while (0)
+#define BUFFER_SIZE 5
+#define MIN 3
+#define KEY 111001
 
 
 /* Structure for BUFFER and semaphores for synchronization */
@@ -26,9 +18,20 @@ typedef struct
 {    
 	int buff[BUFFER_SIZE];
     int head, tail, n;
-	sem_t mutex, empty, full;
-    sem_t read_by_AC, read_by_B, not_read_by_AC, not_read_by_B;
-    int b, ac;
+
+    sem_t full, empty, enough;		// semaphores for buffer 
+    sem_t mutex;                    // semaphore for mutual exclusion
+
+	sem_t a, b, c;			        // semaphores for consumers
+
+    sem_t access;
+    int accessed_by_A;
+    int accessed_by_B;
+    int accessed_by_C;
+	int read_by_A;
+	int read_by_B;
+	int read_by_C;
+
 } MEM;
 
 /* Shared memory allocation */
@@ -52,66 +55,188 @@ void init()
     /* Initialize structure pointer with shared memory */
 
 	/* Initialize semaphores */
-	CHECK(sem_init(&M->mutex,1,1)==0, "sem_init (mutex)");
+	sem_init(&M->mutex,1,1);
     
-    CHECK(sem_init(&M->empty,1,BUFFER_SIZE)==0, "sem_init (empty)");
+    sem_init(&M->empty,1,0);
 
-    CHECK(sem_init(&M->full,1,0)==0, "sem_init (full)");
+    sem_init(&M->full,1,BUFFER_SIZE);
 
-    CHECK(sem_init(&M->read_by_AC,1,0)==0, "sem_init (read_by_A)");
+    sem_init(&M->enough,1,0);
 
-    CHECK(sem_init(&M->read_by_B,1,0)==0, "sem_init (read_by_B)");
+    sem_init(&M->a,1,1);
 
-    CHECK(sem_init(&M->not_read_by_B,1,1)==0, "sem_init (not_read_by_B)");
+    sem_init(&M->b,1,1);
 
-    CHECK(sem_init(&M->not_read_by_AC,1,1)==0, "sem_init (not_read_by_AC)");
+    sem_init(&M->c,1,1);
+
+    sem_init(&M->access,1,1);
 
     M->head=0;
     M->tail=0;
     M->n=0;    
 
-    M->b=0;
-    M->ac=0;
+    M->accessed_by_A=0;
+    M->accessed_by_B=0;
+    M->accessed_by_C=0;
+    M->read_by_A=0;
+    M->read_by_B=0;
+    M->read_by_C=0;
 }
 
-void read_elem(int *elem, int *n, char consumer)
+void write_elem(int elem, int *n)
 {
         MEM *S = memory();
-            
+        
+        sem_wait(&S->full);    
+	    sem_wait(&S->mutex); // Semaphore for mutual exclusion
+                
+        (S->n)++;
+        if (S->n > MIN) sem_post(&S->enough);
+
+        *n=S->n;
+        //printf("n = %d\n", *n);
+
+	    (S->buff)[(S->tail)] = elem; // Place value to BUFFER 
+         (S->tail)++;
+        if((S->tail)>=BUFFER_SIZE) (S->tail)=0;  
+        
+        printf("[PRODUCER]\t Placed element [%d]\t %d elements in buffer\n", elem, *n);
+        //printf("[FIFO] n = %d, head = %d, tail = %d\n", (S->n), (S->head), (S->tail));         
+
+        sem_post(&S->mutex); // Mutex up operation
+        sem_post(&S->empty);
+}
+
+
+
+void read_elem(int *elem, int *n)
+{
+        MEM *S = memory();
+        
+        sem_wait(&S->empty);    
 	    sem_wait(&S->mutex); // Semaphore for mutual exclusion
         
         *n = S->n;
-        *elem = (S->buff)[S->head];
-
-        if (consumer == 'a' || consumer == 'c') S->ac=1;
-        if (consumer == 'b') S->b=1;           
+        *elem = (S->buff)[S->head];           
 
         //printf("[FIFO] n = %d, head = %d, tail = %d\n", (S->n), (S->head), (S->tail));         
 
         sem_post(&S->mutex); // Mutex up operation
+        sem_post(&S->empty);
 }
 
-int remove_elem(int *elem, int *n)
+void remove_elem(int *elem, int *n)
 {
         MEM *S = memory();
-            
+
+        sem_wait(&S->enough);        
+        sem_wait(&S->empty);    
 	    sem_wait(&S->mutex); // Semaphore for mutual exclusion
         
-        if( (S->ac) && (S->b) ){  
-            
-            (S->n)--;        
-            *n = S->n;
-            *elem = (S->buff)[S->head];
-            (S->head)++;
-            if((S->head)>=BUFFER_SIZE) (S->head)=0;
+        (S->n)--;        
+        *n = S->n;
+        *elem = (S->buff)[S->head];
+        (S->head)++;
+        if((S->head)>=BUFFER_SIZE) (S->head)=0;
 
-            S->ac=0; S->b=0;
-            sem_post(&S->mutex); // Mutex up operation
-            return 0;
+        sem_post(&S->mutex); // Mutex up operation
+                
+        sem_post(&S->full);
+         
         
-        }else{
-            sem_post(&S->mutex);
-            return -1;          
+}
+
+void clear_access(){
+    MEM *S = memory();
+    
+    if (S->accessed_by_A)
+      sem_post(&S->a);
+    if (S->accessed_by_B)
+      sem_post(&S->b);
+    if (S->accessed_by_C)
+      sem_post(&S->c);
+    S->read_by_A = 0;
+    S->read_by_B = 0;
+    S->read_by_C = 0;
+
+    S->accessed_by_A = 0;
+    S->accessed_by_B = 0;
+    S->accessed_by_C = 0;
+  
+}
+
+void access_buffer(char consumer)
+{
+    int elem, n;
+
+    MEM *S = memory();
+
+    
+
+    
+
+    
+    switch ( consumer ) {
+    case 'A':
+      sem_wait(&S->a);
+      sem_wait(&S->access);
+        //printf("[CONSUMER %c]\t Buffer accessed\n", consumer );
+        S->accessed_by_A=1;
+        
+      if ( !(S->read_by_A) && !(S->read_by_C) ){
+        read_elem(&elem, &n);
+        S->read_by_A=1;
+        printf("[CONSUMER %c]\t Read element [%d]\t %d elements in buffer\n", consumer, elem, n);
+
+        if (S->read_by_B){
+            remove_elem(&elem, &n);
+            printf("[CONSUMER %c]\t Removed element [%d]\t %d elements in buffer\n", consumer, elem, n);
+            clear_access();
         }
+      }
+      sem_post(&S->access); 
+      break;
+    case 'B':
+      sem_wait(&S->b);
+      sem_wait(&S->access);
+        //printf("[CONSUMER %c]\t Buffer accessed\n", consumer );
+        S->accessed_by_B=1;
         
+      if ( !(S->read_by_B) ){
+        read_elem(&elem, &n);
+        S->read_by_B=1;
+        printf("[CONSUMER %c]\t Read element [%d]\t %d elements in buffer\n", consumer, elem, n);
+
+        if (S->read_by_A || S-> read_by_C){
+            remove_elem(&elem, &n);
+            printf("[CONSUMER %c]\t Removed element [%d]\t %d elements in buffer\n", consumer, elem, n);
+            clear_access();
+        }
+      }
+      sem_post(&S->access); 
+      break;
+    case 'C':
+      sem_wait(&S->c);
+      sem_wait(&S->access);
+        //printf("[CONSUMER %c]\t Buffer accessed\n", consumer );
+        S->accessed_by_C=1;
+        
+      if ( !(S->read_by_A) && !(S->read_by_C) ){
+        read_elem(&elem, &n);
+        S->read_by_A=1;
+        printf("[CONSUMER %c]\t Read element [%d]\t %d elements in buffer\n", consumer, elem, n);
+
+        if (S->read_by_B){
+            remove_elem(&elem, &n);
+            printf("[CONSUMER %c]\t Removed element [%d]\t %d elements in buffer\n", consumer, elem, n);
+            clear_access();
+        }
+      }
+      sem_post(&S->access); 
+      break;
+    
+    }
+
+   
+    
 }
