@@ -4,6 +4,8 @@
 #include<sys/stat.h>
 #include<fcntl.h>
 #include<string.h>
+#include <fcntl.h> // for open
+#include <unistd.h> // for close
 
 #include "fs.h"
 
@@ -38,6 +40,23 @@ int main(int argc, char** argv) {
 		close_drive(id);
 		break;
 
+    // copy file from drive
+	case 'p':
+		fname = argv[3];   // take drive name from second arg
+		id = open_drive(drive_name);
+		file_from_drive(id, fname);
+		close_drive(id);
+		break;
+
+    // delete file from drive
+	case 'd':
+		fname = argv[3];   // take drive name from second arg
+		id = open_drive(drive_name);
+		delete_file(id, fname);
+		close_drive(id);
+		break;
+
+
 	// print drive info
 	case 'i':
 		id = open_drive(drive_name);
@@ -49,6 +68,13 @@ int main(int argc, char** argv) {
 	case 'l':
 		id = open_drive(drive_name);
 		list_files();
+		close_drive(id);
+		break;
+
+    // print drive memory map
+	case 'm':
+		id = open_drive(drive_name);
+		drive_map();
 		close_drive(id);
 		break;
 
@@ -182,7 +208,7 @@ int load_nodes(int drive_id) {
 
 			temp = (node_list*)malloc(sizeof(node_list));
 			strncpy(temp->data.fname, new_node->fname, MAX_FILE_NAME);
-			temp->data.fsize = new_node->fsize;
+			temp->data.fbegin = new_node->fbegin;
 			temp->data.fsize = new_node->fsize;
 			temp->data.exist = new_node->exist;
 			
@@ -254,14 +280,15 @@ int file_to_drive(int id, char *fname) {
 	struct stat fstat;
 	node_list *new_node, *temp;
 
+	//printf("free_nodes: %d\n", free_nodes);
 	// check if there is any free node for file 
-	if (free_nodes == 0) {
-		fprintf(stderr, "Unable to save '%s'. Maximum file number reached!\n", fname);
-		return -1;
-	}
+	//if (free_nodes == 0) {
+	//	fprintf(stderr, "Unable to save '%s'. Maximum file number reached!\n", fname);
+	//	return -1;
+	//}
 
 	// check if no file with same name 
-	if (if_exist_node(fname) != 0) {
+	if (find_node(fname) != NULL) {
 		fprintf(stderr, "Unable to save '%s'. File with the same name exists\n", fname);
 		return -1;
 	}
@@ -277,9 +304,8 @@ int file_to_drive(int id, char *fname) {
 	//printf("drive_free_space: %ld\n", drive_free_space);
 	
 	fbegin = find_space(fsize);
-	//printf("fbegin: %ld\n", fbegin);
 	if (fbegin < 0) {
-		fprintf(stderr, "Unable to find space for file '%s'.\n", fname);
+		fprintf(stderr, "Unable to find space (%lu bytes) for file '%s'.\n",fsize, fname);
 		return -1;
 	}
 	new_node = (node_list*)malloc(sizeof(node_list));
@@ -287,7 +313,9 @@ int file_to_drive(int id, char *fname) {
 	new_node->data.fbegin = fbegin;
 	new_node->data.fsize = fsize;
 	new_node->data.exist = 1;
+
 	add_node(new_node);
+
 	lseek(id, new_node->data.fbegin, 0);
 	size = BUF_SIZE;
 	while (fsize > 0) {
@@ -298,24 +326,26 @@ int file_to_drive(int id, char *fname) {
 		fsize -= size;
 	}
 
-	free_nodes--;
+
+	//free_nodes--;
 
 	drive_free_space -= new_node->data.fsize;
 	printf("File '%s' (size=%lu) saved on drive.\n", fname, size);
+
 	return 0;
 }
 
-/********************************* IF EXIST NODE ******************************************************************/
+/********************************* FIND NODE ******************************************************************/
 
-int if_exist_node(char *fname) {
+node_list *find_node(char *fname) {
 	node_list *temp;
 	temp = head;
 	while (temp != NULL) {
 		if (strcmp(temp->data.fname, fname) == 0)
-			return -1;
+			return temp;
 		temp = temp->next;
 	}
-	return 0;
+	return NULL;
 }
 
 /********************************** ADD NODE *********************************************************************/
@@ -351,8 +381,6 @@ int add_node(node_list *new_node) {
 long find_space(unsigned long fsize) {
 	node_list *temp;
 	if (head == NULL) {
-		//printf("fsize: %ld\n", fstat.st_size);
-		//printf("drive_free_space: %ld\n", drive_free_space);
 		if (drive_free_space >= fsize)
 			return drive_data_start;
 		else
@@ -375,13 +403,85 @@ long find_space(unsigned long fsize) {
 	return -1;
 }
 
+
+/********************************** FILE FROM DRIVE ****************************************************/
+int file_from_drive(int drive_id, char *fname) {
+	node_list *temp;
+	int fid, size=BUF_SIZE;
+	long fsize;
+	char temp_buffer[BUF_SIZE];
+	temp = find_node(fname);
+	
+	if (temp == NULL) {
+		fprintf(stderr, "File '%s' does not exist.\n", fname);
+		return -1;
+	}
+	fid = creat(fname, 0666);
+	if (fid < 0) {
+		fprintf(stderr, "Unable to create file '%s'.\n", fname);
+		return -1;
+	}
+	lseek(drive_id, temp->data.fbegin, 0);
+	fsize = temp->data.fsize;
+	while (fsize > 0) {
+		if (fsize < size)
+			size = fsize;
+		read(drive_id, temp_buffer, size);
+		write(fid, temp_buffer, size);
+		fsize -= size;
+	}
+	close(fid);
+	printf("File '%s' copied from drive\n", fname);
+	return 0;
+}
+
+/************************************ REMOVE FILE *******************************************************/
+
+int delete_file(int drive_id, char *fname) {
+	node_list *temp, *prev;
+	int i;
+	long fsize;
+	temp = find_node(fname);
+
+	if (temp == NULL) {
+		fprintf(stderr, "File '%s' does not exist.\n", fname);
+		return -1;
+	}
+	fsize = temp->data.fsize;
+	if (temp == head) {
+		head = temp->next;
+		free(temp);
+	}	
+	else {
+		prev = head;
+		while (prev->next != temp)
+			prev = prev->next;
+		if (temp->next == NULL) {
+			prev->next == NULL;
+			free(temp);	
+		}
+		else {
+			prev->next = temp->next;
+			free(temp);
+		}
+	}
+	//free_nodes--;
+	drive_free_space += fsize;
+	printf("File '%s' deleted\n", fname);
+	return 0;
+
+}
+
+
+
+
 /************************************ INFO *********************************************************************/
 int print_info() {
 	printf("Size: %lu\nData start segment: %lu\nFree space: %lu\n", drive_size, drive_data_start, drive_free_space);
 	return 0;
 }
 
-/********************************** LIST FILE ******************************************************************/
+/********************************** LIST FILES ******************************************************************/
 
 int list_files() {
 	node_list *temp;
@@ -391,5 +491,23 @@ int list_files() {
 		printf("%s\n", temp->data.fname);
 		temp = temp->next;
 	}
+	return 0;
+}
+
+/********************************** MAP DRIVE ******************************************************************/
+int drive_map(){
+    node_list *temp;
+//    printf("head->data.fbegin: %lu\n", head->data.fbegin);
+//    printf("head->data.fsize: %lu\n", head->data.fsize);//
+//    printf("head->data.fname: %s\n", head->data.fname);//
+	temp = head;
+
+    printf("Drive map: ");
+	printf("%lu [%lu] ", drive_data_start - temp->data.fbegin, temp->data.fsize);
+	while (temp->next != NULL) {
+		printf("%lu [%lu] ", temp->next->data.fbegin-(temp->data.fbegin + temp->data.fsize), temp->next->data.fsize);
+		temp = temp->next;
+	}
+	printf("%lu\n", drive_size - (temp->data.fbegin + temp->data.fsize));
 	return 0;
 }
