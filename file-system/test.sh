@@ -56,6 +56,8 @@ echo "\n"
 ./fs m D
 echo "\n"
 
+./fs s D test-files/file7.txt
+
 echo "============== Coping file from drive (diff check) ================="
 echo "\nFile to copy:"
 ls -l test-files/cat.jpg
